@@ -95,7 +95,7 @@ Create a `.env` file in the `backend/` directory:
 ```ini
 # Required
 DATABASE_URL=postgres://user:pass@host:5432/dbname
-
+OPENAI_API_KEY = sk....
 # Optional (for SSL-enabled DBs)
 PGSSL=true
 

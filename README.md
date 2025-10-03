@@ -115,40 +115,12 @@ Node.js (TypeScript) + Express API • React (Vite) Front-end • PostgreSQL •
 
 ---
 
-## Table of Contents
-
-- [Introduction](#-introduction)
-- [Problem](#-problem)
-- [Solution](#-solution)
-- [Impact](#-impact)
--  [Features](#-features)
-- [Architecture](#architecture)
-- [Folders](#folders)
-- [Quick Start](#quick-start)
-- [Environment](#environment)
-- [API (HTTP) Overview](#api-http-overview)
-  - [Customers](#customers)
-  - [Products](#products)
-  - [Services](#services)
-  - [Quotes](#quotes)
-  - [AI Pricing](#ai-pricing)
-- [Front-end](#front-end)
-- [Pricing Model (ML)](#pricing-model-ml)
-  - [What it Predicts](#what-it-predicts)
-  - [Signals Used](#signals-used)
-  - [Training Process](#training-process)
-  - [Runtime Blender](#runtime-blender)
-  - [Metrics & Diagnostics](#metrics--diagnostics)
-  - [Reproduce Training & Report](#reproduce-training--report)
-- [Security & Roles](#security--roles)
-- [Roadmap](#roadmap)
-- [Notes for Reviewers](#notes-for-reviewers)
-
----
 
 ## Architecture
 
-<img width="3840" height="1952" alt="Untitled diagram _ Mermaid Chart-2025-10-03-225101" src="https://github.com/user-attachments/assets/53ed64b0-7b4f-4feb-b949-56db9219b5f1" />
+The platform is built on a modular and scalable architecture that supports clean separation of concerns across the frontend, backend, database, and AI services.
+
+![System Architecture](https://github.com/user-attachments/assets/53ed64b0-7b4f-4feb-b949-56db9219b5f1)
 
 ```
 

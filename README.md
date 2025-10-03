@@ -147,7 +147,8 @@ Base path: `/api`. All endpoints use JSON.
 | GET    | `/quotes/:id`        | —                                                  | View single quote  |                     |
 | POST   | `/quotes`            | Header + line items                                | Create draft quote |                     |
 | PUT    | `/quotes/:id`        | Partial header update                              | Update quote       |                     |
-| PATCH  | `/quotes/:id/status` | `{ status: "accepted"                              | "declined" }`      | Update quote status |
+| PATCH  | `/quotes/:id/status` | `{ status: "accepted", "declined" }`                | Update quote status |
+    |
 | DELETE | `/quotes/:id`        | —                                                  | Delete quote       |                     |
 
 ### AI Pricing
@@ -155,14 +156,13 @@ Base path: `/api`. All endpoints use JSON.
 | Method | Route                | Body                      | Description                  |
 | ------ | -------------------- | ------------------------- | ---------------------------- |
 | POST   | `/quotes/ai-suggest` | Quote header + line items | Auto-fill AI-suggested costs |
+| POST   | `/api/notes/summarize` | text, max_words: 60  | summarize notes |
 
 ---
 
 ## Front-end
 
 Built with **React + Vite** using **utility-first CSS** (Tailwind-style).
-
-UI Inspired by **Google Cloud Console**:
 
 * **Sidebar**: grouped into Quoting, Catalogue, Operations, Admin.
 * **Locked features** are marked with 🔒 until enabled.
@@ -254,21 +254,13 @@ python metrics_report.py
 
 * Supports custom headers:
 
+## Future
   * `x-api-key` — (optional) API key middleware
   * `x-user-role` — `"admin"`, `"manager"`, or `"staff"` to restrict UI actions
 * JWT/session-based auth recommended for production.
 
 ---
 
-## Roadmap
-
-* ✅ Inventory & logistics: delivery zones, distance pricing
-* ✅ Job management (surveys, installs, repairs)
-* 📝 Quote templates + PDF export
-* 🔒 Stronger authN/Z & audit logging
-* 📈 Model drift & calibration dashboard
-
----
 
 ## Notes for Reviewers
 

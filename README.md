@@ -8,7 +8,7 @@
 - [Solution](#solution)
 - [Impact](#impact)
 -  [Features](#features)
--  [Images](#images)
+-  [Screenshots](#screenshots)
 - [Architecture](#architecture)
 - [Folders](#folders)
 - [Quick Start](#quick-start)
@@ -71,21 +71,43 @@ The **Reliant Windows Quotation & Pricing Platform** addresses these issues by o
 
 ##  Features
 
-- Full-featured **CRM** with lead tracking and customer history
-- **Quote generation engine** with breakdowns by cost type
-- **Residual prediction model** for smart pricing
-- Loyalty-based **discount policy engine**
-- **Modular frontend dashboard** with plug-in support for future modules
-- RESTful API backend
-- Role-based user access control
+- Full-featured **CRM** with lead tracking and customer history  
+- **Quote generation engine** with breakdowns by cost type  
+- **Smart quotation and summarization** – auto-generates human-readable summaries for each quote for easy sharing and clarity  
+- **Residual prediction model** for smart pricing  
+- Loyalty-based **discount policy engine**  
+- **Modular frontend dashboard** with plug-in support for future modules  
+- RESTful API backend  
+- Role-based user access control  
+
 
 ---
 
-## Images
-<img width="1914" height="922" alt="customer" src="https://github.com/user-attachments/assets/d3a7ca9e-c095-4ad9-b739-1db30f18e464" />
-<img width="1913" height="926" alt="quotations" src="https://github.com/user-attachments/assets/247e0198-4cc8-4ac5-89ab-c91e732a6888" />
-<img width="1911" height="922" alt="makeAQuote" src="https://github.com/user-attachments/assets/cf5e3d57-ae3c-42b1-a7bb-8abb20ef8def" />
-<img width="1911" height="917" alt="home" src="https://github.com/user-attachments/assets/032701b7-23af-469f-89db-38c9d0f32184" />
+##  Screenshots
+
+A visual overview of the Reliant Windows Quotation & Pricing Platform:
+
+### 🏠 Home Dashboard
+![Home](https://github.com/user-attachments/assets/032701b7-23af-469f-89db-38c9d0f32184)
+_Overview of key metrics, navigation, and recent activity._
+
+---
+
+### 👤 Customer Management
+![Customer](https://github.com/user-attachments/assets/d3a7ca9e-c095-4ad9-b739-1db30f18e464)
+_Manage customer profiles, history, and interactions._
+
+---
+
+### 🧾 Make a Quote
+![Make a Quote](https://github.com/user-attachments/assets/cf5e3d57-ae3c-42b1-a7bb-8abb20ef8def)
+_Build detailed quotes with smart pricing and cost breakdowns._
+
+---
+
+### 📄 Quotations List
+![Quotations](https://github.com/user-attachments/assets/247e0198-4cc8-4ac5-89ab-c91e732a6888)
+_View, edit, and manage all saved quotations with filters and status tracking._
 
 
 **Tech Stack:**  

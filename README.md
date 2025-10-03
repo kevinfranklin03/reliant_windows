@@ -1,7 +1,84 @@
 
 # Reliant Windows UK — Pricing & Quotations Platform
 
+## Table of Contents
+
+- [Introduction](#-introduction)
+- [Problem](#-problem)
+- [Solution](#-solution)
+- [Impact](#-impact)
+-  [Features](#-features)
+- [Architecture](#architecture)
+- [Folders](#folders)
+- [Quick Start](#quick-start)
+- [Environment](#environment)
+- [API (HTTP) Overview](#api-http-overview)
+  - [Customers](#customers)
+  - [Products](#products)
+  - [Services](#services)
+  - [Quotes](#quotes)
+  - [AI Pricing](#ai-pricing)
+- [Front-end](#front-end)
+- [Pricing Model (ML)](#pricing-model-ml)
+  - [What it Predicts](#what-it-predicts)
+  - [Signals Used](#signals-used)
+  - [Training Process](#training-process)
+  - [Runtime Blender](#runtime-blender)
+  - [Metrics & Diagnostics](#metrics--diagnostics)
+  - [Reproduce Training & Report](#reproduce-training--report)
+- [Security & Roles](#security--roles)
+- [Roadmap](#roadmap)
+- [Notes for Reviewers](#notes-for-reviewers)
+
+---
+## Introduction
+CRM and quoting tool designed to transform how window and home improvement businesses in the UK manage their customer interactions and pricing strategies. Built with scalability, efficiency, and profitability in mind, the platform replaces outdated manual and spreadsheet-based processes with an intelligent, unified solution.
+
+## 🚨 Problem
+
+The UK window and home improvement industry faces several challenges due to outdated quoting and customer management practices:
+
+- ❌ Quotes are slow, inconsistent, and error-prone.
+- ❌ Pricing relies on guesswork rather than data, impacting profit margins.
+- ❌ Customer insights are underused; loyalty and satisfaction are not reflected in offers.
+- ❌ Information is scattered across spreadsheets, emails, and handwritten notes.
+
 ### End-to-end CRM/ERP Web Application
+
+---
+
+## 💡 Solution
+
+The **Reliant Windows Quotation & Pricing Platform** addresses these issues by offering:
+
+- ✅ **Unified CRM + Quotation Tool** – Manage customer data, products, services, and quotes in one integrated interface.
+- ✅ **Smart Quote Builder** – Create itemized, editable quotes with clear breakdowns (materials, labour, transport, VAT).
+- ✅ **AI-Assisted Pricing** – Suggests optimal pricing using machine learning models trained on historical sales data.
+- ✅ **Customer-Aware Discounts** – Dynamically apply discounts based on loyalty, repeat purchases, and satisfaction scores.
+- ✅ **Scalable Dashboard** – Modular interface inspired by Google Cloud Console, supporting future expansion (Logistics, Finance, Operations, etc.).
+
+---
+
+## 📈 Impact
+
+- ⚡ **Faster quoting** → Accelerate lead responses and close deals faster.
+- 📊 **Data-driven pricing** → Improve accuracy and boost profit margins.
+- 🤝 **Personalized experience** → Reward loyal customers with smarter discounts.
+- 🔧 **Future-ready architecture** → Designed for extensibility and scalability.
+
+---
+
+## ✨ Features
+
+- Full-featured **CRM** with lead tracking and customer history
+- **Quote generation engine** with breakdowns by cost type
+- **Residual prediction model** for smart pricing
+- Loyalty-based **discount policy engine**
+- **Modular frontend dashboard** with plug-in support for future modules
+- RESTful API backend
+- Role-based user access control
+
+---
 
 **Tech Stack:**  
 Node.js (TypeScript) + Express API • React (Vite) Front-end • PostgreSQL • Light ML layer for pricing suggestions.
@@ -10,6 +87,11 @@ Node.js (TypeScript) + Express API • React (Vite) Front-end • PostgreSQL •
 
 ## Table of Contents
 
+- [Introduction](#-introduction)
+- [Problem](#-problem)
+- [Solution](#-solution)
+- [Impact](#-impact)
+-  [Features](#-features)
 - [Architecture](#architecture)
 - [Folders](#folders)
 - [Quick Start](#quick-start)
@@ -270,6 +352,6 @@ python metrics_report.py
 
 ---
 
-```
+#### made with love❤️
 
 

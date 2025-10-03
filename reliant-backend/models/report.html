@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Pricing Model Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,'Noto Sans',sans-serif;max-width:980px;margin:20px auto;padding:0 16px;} h1,h2{margin:8px 0 4px} ul{line-height:1.6}</style>
+</head><body>
+
+    <h1>Pricing Model Report</h1>
+    <p><b>Samples:</b> 100</p>
+    <ul>
+      <li><b>CV (k=5):</b> MAE = £187.88 (± £42.91)</li>
+      <li><b>OOF:</b> MAE = £187.88, RMSE = £258.90, R² = -0.109, MAPE = 7968922271.5%</li>
+      <li><b>Baselines:</b> global-mean MAE = £182.69, bucket-mean MAE = £21.69</li>
+      <li><b>In-sample:</b> MAE = £178.98, RMSE = £238.82, R² = 0.056, MAPE = 7880846497.6%</li>
+    </ul>
+
+    <h2>True vs Predicted (OOF)</h2>
+    <img src="residual_true_vs_pred.png" style="max-width:100%;border:1px solid #e5e5e5;border-radius:8px;margin:10px 0;" />
+
+    <h2>Error Distribution</h2>
+    <img src="residual_error_hist.png" style="max-width:100%;border:1px solid #e5e5e5;border-radius:8px;margin:10px 0;" />
+
+    <h2>Per-Bucket MAE (worst buckets)</h2>
+    <img src="bucket_mae_top.png" style="max-width:100%;border:1px solid #e5e5e5;border-radius:8px;margin:10px 0;" />
+
+    <h2>Calibration</h2>
+    <img src="calibration_plot.png" style="max-width:100%;border:1px solid #e5e5e5;border-radius:8px;margin:10px 0;" />
+    
+        <h2>Top Features (Ridge coefficients)</h2>
+        <img src="feature_importance.png" style="max-width:100%;border:1px solid #e5e5e5;border-radius:8px;margin:10px 0;" />
+        
+</body></html>

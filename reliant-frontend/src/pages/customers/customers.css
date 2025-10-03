@@ -1,0 +1,31 @@
+/* selects readable in dropdown */
+.field-select { background-color: rgba(255,255,255,0.06); }
+.field-select option { color: #111 !important; background: #fff !important; }
+
+/* stars */
+.star { fill: none; stroke: currentColor; opacity: .35 }
+.star.fill { fill: currentColor; opacity: 1 }
+.star-btn { background: transparent; border: 0; padding: 0 .1rem; line-height: 0; cursor: pointer }
+.star-btn:hover .star, .star-btn:focus .star { opacity: .9 }
+
+/* one-line star filter */
+.rs-line-stars { display:flex; align-items:center; gap:.5rem; }
+.rs-line-stars__label { font-size:.9rem; opacity:.8; white-space:nowrap; }
+.rs-line-stars__row { display:inline-flex; align-items:center; gap:.15rem; }
+.rs-star { fill:none; stroke:currentColor; opacity:.35; transition:opacity .12s ease; }
+.rs-star--fill { fill:currentColor; opacity:1; }
+.rs-star-btn { background:transparent; border:0; padding:.1rem; line-height:0; cursor:pointer; }
+.rs-star-btn:hover .rs-star { opacity:.9; }
+
+/* buttons */
+.btn { border: 1px solid rgba(255,255,255,.15); padding: .45rem .7rem; border-radius: .55rem; }
+.btn-primary { border: 1px solid rgba(255,255,255,.25); padding: .45rem .7rem; border-radius: .55rem; background: rgba(255,255,255,.08); }
+.btn-ghost { padding: .25rem .5rem; border-radius: .45rem; border: 1px solid rgba(255,255,255,.12); background: transparent; }
+.btn-ghost:hover { background: rgba(255,255,255,.06); }
+.btn-danger { padding: .25rem .6rem; border-radius: .45rem; border: 1px solid rgba(244,63,94,.35); background: rgba(244,63,94,.13); }
+.btn-danger:hover { background: rgba(244,63,94,.18); }
+
+/* table basics */
+.table { width: 100%; border-collapse: separate; border-spacing: 0 }
+.thead th.th { text-align: left; font-weight: 600; padding: .6rem .75rem; border-bottom: 1px solid rgba(255,255,255,.12) }
+.td { padding: .55rem .75rem; border-bottom: 1px solid rgba(255,255,255,.06) }

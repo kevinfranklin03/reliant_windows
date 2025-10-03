@@ -1,0 +1,18 @@
+# --- env / secrets ---
+# ignore all env files but keep examples
+*.env
+.env
+.env.*
+backend/.env
+!*.env.example
+!.env.example
+!.env*.example
+
+# --- node/ts common ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.vscode/
+.idea/
+.DS_Store

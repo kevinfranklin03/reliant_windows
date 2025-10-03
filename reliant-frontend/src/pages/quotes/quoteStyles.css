@@ -1,0 +1,84 @@
+/* keep your existing customer styles */
+.field-select option { color:#111 !important; background:#fff !important; }
+
+/* page layout */
+.make-quote__grid {
+  display:grid; gap:16px;
+}
+@media (min-width: 1024px) {
+  .make-quote__grid {
+    grid-template-columns: minmax(0,1fr) 360px; /* ~70/30 */
+    align-items:start;
+  }
+}
+
+/* header */
+.make-quote__header {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  margin-bottom:10px;
+}
+.make-quote__title { font-size:1.25rem; font-weight:800; margin:0; }
+.quote-id { opacity:.6; font-size:.75rem; }
+
+/* status badge (on top of your .badge from index.css) */
+.badge--draft    { background: rgba(99,102,241,.12); border-color: rgba(99,102,241,.25); color:#c7d2fe; }
+.badge--issued   { background: rgba(45,212,191,.10); border-color: rgba(45,212,191,.25); color:#99f6e4; }
+.badge--accepted { background: rgba(34,197,94,.10);  border-color: rgba(34,197,94,.25);  color:#a7f3d0; }
+.badge--declined { background: rgba(239,68,68,.10);  border-color: rgba(239,68,68,.25);  color:#fecaca; }
+.badge--expired  { background: rgba(245,158,11,.10); border-color: rgba(245,158,11,.25); color:#fed7aa; }
+.badge--converted{ background: rgba(16,185,129,.10); border-color: rgba(16,185,129,.25); color:#bbf7d0; }
+
+/* mobile fixed action bar */
+.actions-bar { display:grid; gap:8px; }
+@media (max-width: 1023px) {
+  .actions-bar--fixed {
+    position: sticky; bottom: 0; left: 0; right: 0;
+    background: rgba(10,12,22,.92); /* dark, like customers page */
+    backdrop-filter: blur(6px);
+    border-top: 1px solid rgba(255,255,255,.08);
+    padding: 10px;
+    border-radius: 12px;
+  }
+  .actions-bar--fixed .actions-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+}
+@media (min-width: 1024px) {
+  .actions-row { display:flex; flex-wrap:wrap; gap:8px; }
+}
+
+/* subtle section headings */
+.h2 { font-size:1rem; font-weight:700; margin:0 0 6px; color:#cbd5e1; }
+.subtle { color:#94a3b8; font-size:.8rem; }
+
+/* read-only input look (dark) */
+.input-ro { background: rgba(255,255,255,.04); }
+
+/* suggestion reason */
+.suggest-reason {
+  background: rgba(255,255,255,.03);
+  border: 1px dashed rgba(255,255,255,.12);
+  border-radius: 10px; padding: 8px 10px; font-size: .9rem; color:#cbd5e1;
+}
+
+/* FIX: readable items in native <select> dropdown menus (Windows/Chrome) */
+select.field,
+.rs-select {
+  color: #e5e7eb; /* closed state text on dark input */
+}
+
+/* when the OS renders the dropdown menu, use dark text on white menu */
+select.field option,
+.rs-select option,
+select.field optgroup,
+.rs-select optgroup {
+  color: #0f172a !important;          /* very dark */
+  background-color: #ffffff !important;
+}
+
+/* high-contrast for hovered/selected options (helps on some browsers) */
+select.field option:checked,
+.rs-select option:checked,
+select.field option:hover,
+.rs-select option:hover {
+  color: #0b1220 !important;
+  background-color: #e6eefc !important;
+}

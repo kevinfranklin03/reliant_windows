@@ -54,7 +54,7 @@ models/   (trained artifacts: .onnx, bucket_stats.json, similarity_index.json, r
 ## Folders
 
 - `backend/`
-  - `src/infra/db.ts` — PG connection setup.
+  - `src/db.ts` — PG connection setup.
   - `src/routes.ts` — Main route registry.
   - `src/modules/*` — Business logic for customers, quotes, pricing, etc.
 - `frontend/`

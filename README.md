@@ -1,7 +1,7 @@
 
 # Reliant Windows UK — Pricing & Quotations Platform
 
-###End-to-end quoting system for window and door installation jobs.
+### End-to-end quoting system for window and door installation jobs.
 
 **Tech Stack:**  
 Node.js (TypeScript) + Express API • React (Vite) Front-end • PostgreSQL • Light ML layer for pricing suggestions.

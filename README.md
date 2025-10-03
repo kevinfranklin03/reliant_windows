@@ -8,6 +8,7 @@
 - [Solution](#-solution)
 - [Impact](#-impact)
 -  [Features](#-features)
+-  [Images](#-images)
 - [Architecture](#architecture)
 - [Folders](#folders)
 - [Quick Start](#quick-start)
@@ -34,7 +35,7 @@
 ## Introduction
 CRM and quoting tool designed to transform how window and home improvement businesses in the UK manage their customer interactions and pricing strategies. Built with scalability, efficiency, and profitability in mind, the platform replaces outdated manual and spreadsheet-based processes with an intelligent, unified solution.
 
-## 🚨 Problem
+##  Problem
 
 The UK window and home improvement industry faces several challenges due to outdated quoting and customer management practices:
 
@@ -47,7 +48,7 @@ The UK window and home improvement industry faces several challenges due to outd
 
 ---
 
-## 💡 Solution
+##  Solution
 
 The **Reliant Windows Quotation & Pricing Platform** addresses these issues by offering:
 
@@ -59,7 +60,7 @@ The **Reliant Windows Quotation & Pricing Platform** addresses these issues by o
 
 ---
 
-## 📈 Impact
+##  Impact
 
 - ⚡ **Faster quoting** → Accelerate lead responses and close deals faster.
 - 📊 **Data-driven pricing** → Improve accuracy and boost profit margins.
@@ -68,7 +69,7 @@ The **Reliant Windows Quotation & Pricing Platform** addresses these issues by o
 
 ---
 
-## ✨ Features
+##  Features
 
 - Full-featured **CRM** with lead tracking and customer history
 - **Quote generation engine** with breakdowns by cost type
@@ -79,6 +80,8 @@ The **Reliant Windows Quotation & Pricing Platform** addresses these issues by o
 - Role-based user access control
 
 ---
+
+## Images
 
 **Tech Stack:**  
 Node.js (TypeScript) + Express API • React (Vite) Front-end • PostgreSQL • Light ML layer for pricing suggestions.

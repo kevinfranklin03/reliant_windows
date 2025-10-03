@@ -3,12 +3,12 @@
 
 ## Table of Contents
 
-- [Introduction](#-introduction)
-- [Problem](#-problem)
-- [Solution](#-solution)
-- [Impact](#-impact)
--  [Features](#-features)
--  [Images](#-images)
+- [Introduction](#introduction)
+- [Problem](#problem)
+- [Solution](#solution)
+- [Impact](#impact)
+-  [Features](#features)
+-  [Images](#images)
 - [Architecture](#architecture)
 - [Folders](#folders)
 - [Quick Start](#quick-start)
@@ -82,6 +82,11 @@ The **Reliant Windows Quotation & Pricing Platform** addresses these issues by o
 ---
 
 ## Images
+<img width="1914" height="922" alt="customer" src="https://github.com/user-attachments/assets/d3a7ca9e-c095-4ad9-b739-1db30f18e464" />
+<img width="1913" height="926" alt="quotations" src="https://github.com/user-attachments/assets/247e0198-4cc8-4ac5-89ab-c91e732a6888" />
+<img width="1911" height="922" alt="makeAQuote" src="https://github.com/user-attachments/assets/cf5e3d57-ae3c-42b1-a7bb-8abb20ef8def" />
+<img width="1911" height="917" alt="home" src="https://github.com/user-attachments/assets/032701b7-23af-469f-89db-38c9d0f32184" />
+
 
 **Tech Stack:**  
 Node.js (TypeScript) + Express API • React (Vite) Front-end • PostgreSQL • Light ML layer for pricing suggestions.
@@ -120,6 +125,8 @@ Node.js (TypeScript) + Express API • React (Vite) Front-end • PostgreSQL •
 ---
 
 ## Architecture
+
+<img width="3840" height="1952" alt="Untitled diagram _ Mermaid Chart-2025-10-03-225101" src="https://github.com/user-attachments/assets/53ed64b0-7b4f-4feb-b949-56db9219b5f1" />
 
 ```
 

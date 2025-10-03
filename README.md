@@ -1,8 +1,4 @@
-Here's a full **README.md** file in Markdown format for the **Reliant Windows UK — Pricing & Quotations Platform**, structured with clarity and polish for public or internal use:
 
----
-
-```markdown
 # Reliant Windows UK — Pricing & Quotations Platform
 
 End-to-end quoting system for window and door installation jobs.

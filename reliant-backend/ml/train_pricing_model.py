@@ -1,20 +1,44 @@
+"""
+train_pricing_model_v2.py (no CLI)
+----------------------------------
+Loads CSV paths from code (with optional ENV overrides), then trains the improved model:
+- Uses Empirical-Bayes bucket shrink mean as a feature (strong prior)
+- GradientBoostingRegressor(loss='absolute_error') for robust MAE optimisation
+- Leak-proof OOF: shrink feature computed from TRAIN fold only
+- Exports PKL, (best-effort) ONNX, metrics.json, predictions.csv, bucket_mae.csv,
+  bucket_stats.json, similarity_index.json
+"""
 
-import argparse
 from pathlib import Path
+import os
 import json
+import warnings
 import numpy as np
 import pandas as pd
 
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.pipeline import Pipeline
-from sklearn.linear_model import RidgeCV
-from sklearn.model_selection import KFold, cross_val_score, cross_val_predict
-from sklearn.metrics import mean_absolute_error, r2_score, f1_score, precision_score, recall_score
-
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.model_selection import KFold
+from sklearn.metrics import mean_absolute_error, r2_score
 import joblib
-from skl2onnx import convert_sklearn
-from skl2onnx.common.data_types import FloatTensorType, StringTensorType
+
+# ---------- CONFIG: point these to your files ----------
+# You can leave these as-is if your repo has data/quotes.csv etc.
+# Windows paths: keep r"..." to avoid backslash escapes.
+DEFAULT_QUOTES_CSV = Path(os.getenv("QUOTES_CSV") or r"C:\Users\kevin\OneDrive\Desktop\personal-projects\reliant_windows\reliant-backend\ml\quotes.csv")
+DEFAULT_CUSTOMERS_CSV = Path(os.getenv("CUSTOMERS_CSV") or r"C:\Users\kevin\OneDrive\Desktop\personal-projects\reliant_windows\reliant-backend\ml\customers.csv")
+DEFAULT_OUT_DIR = Path(os.getenv("OUT_DIR") or r"C:\Users\kevin\OneDrive\Desktop\personal-projects\reliant_windows\reliant-backend\models_v2")
+# ------------------------------------------------------
+
+# Optional ONNX export (guarded)
+try:
+    from skl2onnx import convert_sklearn
+    from skl2onnx.common.data_types import FloatTensorType, StringTensorType
+    ONNX_OK = True
+except Exception:
+    ONNX_OK = False
 
 # ---------------- helpers ----------------
 def postcode_area(pc: str) -> str:
@@ -22,29 +46,21 @@ def postcode_area(pc: str) -> str:
         return ""
     return pc.strip().split()[0].upper()
 
-def mape(y_true, y_pred, eps=1e-6):
-    y_true = np.asarray(y_true, float)
-    y_pred = np.asarray(y_pred, float)
+def rmse(y_true, y_pred):
+    y_true = np.asarray(y_true, float); y_pred = np.asarray(y_pred, float)
+    return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+
+def mape_safe(y_true, y_pred, eps=1e-6):
+    y_true = np.asarray(y_true, float); y_pred = np.asarray(y_pred, float)
     denom = np.maximum(np.abs(y_true), eps)
     return float(np.mean(np.abs((y_true - y_pred) / denom))) * 100.0
 
-def rmse(y_true, y_pred):
-    y_true = np.asarray(y_true, float)
-    y_pred = np.asarray(y_pred, float)
-    return float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+def build_df(quotes_csv: Path, customers_csv: Path) -> pd.DataFrame:
+    if not quotes_csv.exists():
+        raise FileNotFoundError(f"quotes_csv not found: {quotes_csv}")
+    if not customers_csv.exists():
+        raise FileNotFoundError(f"customers_csv not found: {customers_csv}")
 
-def huber_loss(y_true, y_pred, delta=50.0):
-    e = np.asarray(y_true) - np.asarray(y_pred)
-    a = np.abs(e)
-    quad = 0.5 * (e ** 2)
-    lin = delta * (a - 0.5 * delta)
-    return float(np.mean(np.where(a <= delta, quad, lin)))
-
-def pinball_loss(y_true, y_pred, tau=0.5):
-    e = np.asarray(y_true) - np.asarray(y_pred)
-    return float(np.mean(np.maximum(tau * e, (tau - 1) * e)))
-
-def build_df(quotes_csv: str, customers_csv: str):
     q = pd.read_csv(quotes_csv)
     c = pd.read_csv(customers_csv)
 
@@ -70,7 +86,7 @@ def build_df(quotes_csv: str, customers_csv: str):
     for col in num_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
-    # baseline subtotal & residual target
+    # baseline subtotal & residual target (clipped at 0)
     df["baseline_subtotal"] = (
         df["base_cost"] + df["material_cost"] + df["labour_cost"] +
         df["overhead_cost"] + df["timeline_cost"] + df["transport_cost"] +
@@ -79,65 +95,34 @@ def build_df(quotes_csv: str, customers_csv: str):
     df["residual"] = (df["total_net"] - df["baseline_subtotal"]).clip(lower=0.0)
 
     # engineered proxies (until per-item agg is available)
-    df["qty_sum"]    = (df["material_cost"] / 25.0).clip(lower=0.0)   # unitMaterial≈25
-    df["line_count"] = np.maximum(1.0, df["labour_cost"] / 35.0)       # per-line labour≈35
+    df["qty_sum"]    = (df["material_cost"] / 25.0).clip(lower=0.0)
+    df["line_count"] = np.maximum(1.0, df["labour_cost"] / 35.0)
 
-    # features (for linear model only; we still export it)
-    X = df[[
-        "service_type","timeframe","channel","postcode_area","customer_interaction_channel",
-        "qty_sum","line_count","customer_satisfaction","customer_total_purchases"
-    ]].copy()
-    for col in ["qty_sum","line_count","customer_satisfaction","customer_total_purchases"]:
-        X[col] = pd.to_numeric(X[col], errors="coerce").fillna(0.0)
+    return df
 
-    y = df["residual"].astype(float)
-    return X, y, df
-
-def build_similarity_index(df: pd.DataFrame, out_path: Path, max_points_per_bucket: int = 200):
-    df = df.copy()
-    df["bucket"] = (
-        df["service_type"].astype(str) + "|" +
-        df["timeframe"].astype(str) + "|" +
-        df["channel"].astype(str) + "|" +
-        df["postcode_area"].astype(str)
+def compute_bucket_key(df_like: pd.DataFrame) -> pd.Series:
+    return (
+        df_like["service_type"].astype(str) + "|" +
+        df_like["timeframe"].astype(str) + "|" +
+        df_like["channel"].astype(str) + "|" +
+        df_like["postcode_area"].astype(str)
     )
 
-    buckets = {}
-    for b, g in df.groupby("bucket", as_index=True):
-        pts = g[["qty_sum","line_count","residual"]].dropna()
-        if len(pts) > max_points_per_bucket:
-            pts = pts.sample(max_points_per_bucket, random_state=42)
-        buckets[b] = pts.to_numpy(dtype=float).tolist()
-
-    payload = { "version": 1, "k": 5, "buckets": buckets }
-    out_path.write_text(json.dumps(payload))
-    print(f"Saved similarity index with {len(buckets)} buckets to {out_path}")
-
-def build_bucket_stats(df: pd.DataFrame, out_path: Path):
+def build_bucket_stats(df: pd.DataFrame) -> dict:
     """Empirical-Bayes shrinkage of per-bucket means toward global mean."""
     df = df.copy()
-    df["bucket"] = (
-        df["service_type"].astype(str) + "|" +
-        df["timeframe"].astype(str) + "|" +
-        df["channel"].astype(str) + "|" +
-        df["postcode_area"].astype(str)
-    )
+    df["bucket"] = compute_bucket_key(df)
 
     g = df.groupby("bucket", as_index=False)["residual"].agg(["mean","var","count"]).reset_index()
     g = g.rename(columns={"mean":"mean_residual", "var":"var_residual", "count":"n"}).fillna(0.0)
 
     global_mean = float(df["residual"].mean())
-    # between-bucket variance (var of bucket means)
     tau2 = float(np.var(g["mean_residual"].values, ddof=1)) if len(g) > 1 else 0.0
-    # guard rails
     tau2 = max(tau2, 1e-6)
-
-    # shrinkage factor alpha = n / (n + lambda), lambda = sigma2 / tau2
-    # use per-bucket variance (sigma2). If zero/NaN, use global residual var.
     global_sigma2 = float(df["residual"].var(ddof=1)) if len(df) > 1 else 0.0
     global_sigma2 = max(global_sigma2, 1e-6)
 
-    shrink_rows = []
+    buckets = {}
     for _, row in g.iterrows():
         b = str(row["bucket"])
         n = float(row["n"])
@@ -146,190 +131,182 @@ def build_bucket_stats(df: pd.DataFrame, out_path: Path):
         lam = sigma2 / tau2
         alpha = n / (n + lam) if (n + lam) > 0 else 0.0
         shrink_mean = alpha * mean_b + (1 - alpha) * global_mean
-        shrink_rows.append((b, n, mean_b, shrink_mean))
+        buckets[b] = {"n": n, "mean": mean_b, "shrink_mean": shrink_mean}
 
-    payload = {
-        "version": 1,
-        "global_mean": global_mean,
-        "buckets": { b: {"n": n, "mean": m, "shrink_mean": sm} for (b, n, m, sm) in shrink_rows }
-    }
+    return {"version": 1, "global_mean": global_mean, "buckets": buckets}
+
+def map_shrink_mean(bucket_key: pd.Series, shrink_payload: dict) -> np.ndarray:
+    bmap = shrink_payload["buckets"]; gmean = shrink_payload["global_mean"]
+    return bucket_key.map(lambda b: float(bmap.get(b, {}).get("shrink_mean", gmean))).values
+
+def build_similarity_index(df: pd.DataFrame, out_path: Path, max_points_per_bucket: int = 200):
+    df = df.copy()
+    df["bucket"] = compute_bucket_key(df)
+    buckets = {}
+    for b, g in df.groupby("bucket", as_index=True):
+        pts = g[["qty_sum","line_count","residual"]].dropna()
+        if len(pts) > max_points_per_bucket:
+            pts = pts.sample(max_points_per_bucket, random_state=42)
+        buckets[b] = pts.to_numpy(dtype=float).tolist()
+    payload = { "version": 1, "k": 5, "buckets": buckets }
     out_path.write_text(json.dumps(payload))
-    print(f"Saved bucket stats (with shrinkage) to {out_path}")
 
-def evaluate_and_save_reports(pipe: Pipeline, X: pd.DataFrame, y: pd.Series,
-                              df: pd.DataFrame, out_dir: Path,
-                              f1_threshold: float = 250.0):
-    out_dir.mkdir(parents=True, exist_ok=True)
+def evaluate_cv_oof_with_bucket_feature(df: pd.DataFrame, cat_cols, num_cols, out_dir: Path):
+    """KFold OOF where 'bucket_shrink_mean' feature is computed on TRAIN folds only."""
+    X_base = df[cat_cols + num_cols].copy()
+    y = df["residual"].astype(float).values
+    buckets_all = compute_bucket_key(df).values
 
-    # CV MAE
-    k = min(5, len(X))
+    k = min(5, len(df))
     cv = KFold(n_splits=k, shuffle=True, random_state=42)
-    cv_mae_scores = cross_val_score(pipe, X, y, cv=cv, scoring="neg_mean_absolute_error")
-    cv_mae = float(np.mean(-cv_mae_scores))
-    cv_mae_std = float(np.std(-cv_mae_scores))
 
-    # OOF predictions
-    y_pred_oof = cross_val_predict(pipe, X, y, cv=cv, n_jobs=None, verbose=0)
-    y_true = y.values
-    oof_mae  = mean_absolute_error(y_true, y_pred_oof)
-    oof_rmse = rmse(y_true, y_pred_oof)
-    oof_r2   = r2_score(y_true, y_pred_oof)
-    oof_mape = mape(y_true, y_pred_oof)
-    oof_huber = huber_loss(y_true, y_pred_oof, delta=50.0)
-    oof_pinball = pinball_loss(y_true, y_pred_oof, tau=0.5)
+    y_pred_oof = np.zeros_like(y, dtype=float)
+    per_bucket_records = []
 
-    # Optional F1-style view
-    y_true_cls = (y_true >= f1_threshold).astype(int)
-    y_pred_cls = (np.asarray(y_pred_oof) >= f1_threshold).astype(int)
-    oof_f1 = float(f1_score(y_true_cls, y_pred_cls, zero_division=0))
-    oof_prec = float(precision_score(y_true_cls, y_pred_cls, zero_division=0))
-    oof_rec  = float(recall_score(y_true_cls, y_pred_cls, zero_division=0))
-
-    # Baselines
-    global_mean = float(np.mean(y_true))
-    base_pred_global = np.full_like(y_true, global_mean, dtype=float)
-    base_mae_global  = mean_absolute_error(y_true, base_pred_global)
-
-    # Bucket-mean baseline (warning-free)
-    bucket = (
-        X["service_type"].astype(str) + "|" +
-        X["timeframe"].astype(str) + "|" +
-        X["channel"].astype(str) + "|" +
-        X["postcode_area"].astype(str)
+    gbdt = GradientBoostingRegressor(
+        loss="absolute_error",
+        n_estimators=500,
+        max_depth=3,
+        learning_rate=0.05,
+        subsample=0.9,
+        random_state=42,
     )
-    df_eval = pd.DataFrame({
-        "bucket": bucket.values,
-        "y": y_true,
-        "y_pred_oof": y_pred_oof,
-    })
-    tmp = df_eval[["bucket","y"]].copy()
-    bucket_mean = tmp.groupby("bucket")["y"].transform("mean")
-    base_mae_bucket_mean = mean_absolute_error(df_eval["y"], bucket_mean)
 
-    # Per-bucket MAE of our model (warning-free)
-    tmp2 = df_eval[["bucket","y","y_pred_oof"]].copy()
-    bucket_mae = (
-        tmp2.groupby("bucket", as_index=False)
-            .apply(lambda g: pd.Series({"mae": mean_absolute_error(g["y"], g["y_pred_oof"])}))
-            .reset_index(drop=True)
-    )
+    for fold_idx, (tr, va) in enumerate(cv.split(X_base), 1):
+        Xtr = X_base.iloc[tr].copy()
+        Xva = X_base.iloc[va].copy()
+        ytr = y[tr]
+
+        shrink_payload_tr = build_bucket_stats(df.iloc[tr].copy())
+        bucket_tr = compute_bucket_key(df.iloc[tr])
+        bucket_va = compute_bucket_key(df.iloc[va])
+        Xtr["bucket_shrink_mean"] = map_shrink_mean(bucket_tr, shrink_payload_tr)
+        Xva["bucket_shrink_mean"] = map_shrink_mean(bucket_va, shrink_payload_tr)
+
+        pre = ColumnTransformer(
+            transformers=[
+                ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat_cols),
+                ("num", "passthrough", num_cols + ["bucket_shrink_mean"]),
+            ],
+            remainder="drop",
+            verbose_feature_names_out=False,
+        )
+        pipe = Pipeline([("pre", pre), ("model", gbdt)])
+
+        pipe.fit(Xtr, ytr)
+        yhat = pipe.predict(Xva)
+        yhat = np.maximum(0.0, yhat)  # residuals must be >= 0
+        y_pred_oof[va] = yhat
+
+        b_va = bucket_va.values
+        df_tmp = pd.DataFrame({"bucket": b_va, "y": y[va], "yhat": yhat})
+        g_mae = df_tmp.groupby("bucket", as_index=False).apply(
+            lambda g: pd.Series({"mae": mean_absolute_error(g["y"], g["yhat"])})
+        ).reset_index(drop=True)
+        g_mae["fold"] = fold_idx
+        per_bucket_records.append(g_mae)
+
+    mae = mean_absolute_error(y, y_pred_oof)
+    r2  = r2_score(y, y_pred_oof)
+    rm  = rmse(y, y_pred_oof)
+    mp  = mape_safe(y, y_pred_oof)
+
+    # OOF per-bucket MAE (averaged across folds)
+    per_bucket_df = pd.concat(per_bucket_records, ignore_index=True)
+    bucket_mae = per_bucket_df.groupby("bucket", as_index=False)["mae"].mean()
+    out_dir.mkdir(parents=True, exist_ok=True)
     bucket_mae.to_csv(out_dir / "bucket_mae.csv", index=False)
 
-    # Fit once on full data (for export)
-    pipe.fit(X, y)
-    y_fit = pipe.predict(X)
-    ins_mae  = mean_absolute_error(y_true, y_fit)
-    ins_rmse = rmse(y_true, y_fit)
-    ins_r2   = r2_score(y_true, y_fit)
-    ins_mape = mape(y_true, y_fit)
+    metrics = {
+        "n_samples": int(len(df)),
+        "cv": k,
+        "oof_mae": float(mae),
+        "oof_rmse": float(rm),
+        "oof_r2": float(r2),
+        "oof_mape_pct": float(mp),
+    }
+    (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
 
-    # Save predictions for inspection
     pred_df = pd.DataFrame({
         "quote_id": df.get("id", pd.Series(range(len(df)))),
-        "residual_true": y_true,
+        "residual_true": y,
         "residual_oof_pred": y_pred_oof,
-        "residual_fit_pred": y_fit,
-        "bucket": bucket.values,
+        "bucket": buckets_all,
     })
     pred_df.to_csv(out_dir / "predictions.csv", index=False)
 
-    # Save metrics JSON
-    metrics = {
-      "n_samples": int(len(X)),
-      "cv": k,
-      "cv_mae": cv_mae,
-      "cv_mae_std": cv_mae_std,
-
-      "oof_mae": oof_mae,
-      "oof_rmse": oof_rmse,
-      "oof_r2": float(oof_r2),
-      "oof_mape_pct": oof_mape,
-      "oof_huber_delta50": oof_huber,
-      "oof_pinball_tau0_5": oof_pinball,
-
-      "oof_f1_T": f1_threshold,
-      "oof_f1": oof_f1,
-      "oof_precision": oof_prec,
-      "oof_recall": oof_rec,
-
-      "baseline_mae_global_mean": base_mae_global,
-      "baseline_mae_bucket_mean": base_mae_bucket_mean,
-
-      "insample_mae": ins_mae,
-      "insample_rmse": ins_rmse,
-      "insample_r2": float(ins_r2),
-      "insample_mape_pct": ins_mape,
-      "insample_huber_delta50": huber_loss(y_true, y_fit, delta=50.0),
-      "insample_pinball_tau0_5": pinball_loss(y_true, y_fit, tau=0.5),
-    }
-    (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
-    print(json.dumps(metrics, indent=2))
-
-    return pipe  # fitted
-
-# --------------- main ----------------
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--quotes_csv", required=True)
-    ap.add_argument("--customers_csv", required=True)
-    ap.add_argument("--out_dir", default="models")
-    args = ap.parse_args()
-
-    X, y, df = build_df(args.quotes_csv, args.customers_csv)
-
-    cat_cols = ["service_type","timeframe","channel","postcode_area","customer_interaction_channel"]
-    num_cols = ["qty_sum","line_count","customer_satisfaction","customer_total_purchases"]
-
-    pre = ColumnTransformer(
-        transformers=[
-            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat_cols),
-            ("num", "passthrough", num_cols),
-        ],
-        remainder="drop",
-        verbose_feature_names_out=False,
-    )
-
-    # RidgeCV kept for completeness (but we’ll down-weight it at runtime)
-    alphas = np.logspace(-3, 3, 13)
-    model = RidgeCV(alphas=alphas, cv=KFold(n_splits=min(5, len(X)), shuffle=True, random_state=42))
-    pipe = Pipeline([("pre", pre), ("model", model)])
-
-    out_dir = Path(args.out_dir)
+def fit_final_model_and_export(df: pd.DataFrame, cat_cols, num_cols, out_dir: Path):
+    """Fit final model on ALL data. Also writes similarity_index.json & bucket_stats.json."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Evaluate (CV + OOF + baselines) and fit on full data for export
-    pipe = evaluate_and_save_reports(pipe, X, y, df, out_dir)
+    shrink_payload = build_bucket_stats(df.copy())
+    (out_dir / "bucket_stats.json").write_text(json.dumps(shrink_payload))
 
-    # Save sklearn (debug)
-    joblib.dump(pipe, out_dir / "pricing_residual.pkl")
-
-    # Export ONNX (optional signal)
-    initial_types = [
-        ("service_type", StringTensorType([None, 1])),
-        ("timeframe", StringTensorType([None, 1])),
-        ("channel", StringTensorType([None, 1])),
-        ("postcode_area", StringTensorType([None, 1])),
-        ("customer_interaction_channel", StringTensorType([None, 1])),
-        ("qty_sum", FloatTensorType([None, 1])),
-        ("line_count", FloatTensorType([None, 1])),
-        ("customer_satisfaction", FloatTensorType([None, 1])),
-        ("customer_total_purchases", FloatTensorType([None, 1])),
-    ]
-    onnx_model = convert_sklearn(pipe, initial_types=initial_types, target_opset=15)
-    (out_dir / "pricing_residual.onnx").write_bytes(onnx_model.SerializeToString())
-    print(f"Saved ONNX to {(out_dir / 'pricing_residual.onnx').resolve()}")
-
-    # Build & save kNN similarity index
     build_similarity_index(
         df[["service_type","timeframe","channel","postcode_area","qty_sum","line_count","residual"]],
         out_dir / "similarity_index.json"
     )
 
-    # Build & save bucket stats (Empirical-Bayes shrinkage means)
-    build_bucket_stats(
-        df[["service_type","timeframe","channel","postcode_area","residual"]],
-        out_dir / "bucket_stats.json"
+    X = df[cat_cols + num_cols].copy()
+    X["bucket_shrink_mean"] = map_shrink_mean(compute_bucket_key(df), shrink_payload)
+    y = df["residual"].astype(float).values
+
+    pre = ColumnTransformer(
+        transformers=[
+            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat_cols),
+            ("num", "passthrough", num_cols + ["bucket_shrink_mean"]),
+        ],
+        remainder="drop",
+        verbose_feature_names_out=False,
     )
+
+    gbdt = GradientBoostingRegressor(
+        loss="absolute_error",
+        n_estimators=600,
+        max_depth=3,
+        learning_rate=0.05,
+        subsample=0.9,
+        random_state=42,
+    )
+    pipe = Pipeline([("pre", pre), ("model", gbdt)])
+    pipe.fit(X, y)
+
+    joblib.dump(pipe, out_dir / "pricing_residual.pkl")
+
+    if ONNX_OK:
+        try:
+            initial_types = [
+                ("service_type", StringTensorType([None, 1])),
+                ("timeframe", StringTensorType([None, 1])),
+                ("channel", StringTensorType([None, 1])),
+                ("postcode_area", StringTensorType([None, 1])),
+                ("customer_interaction_channel", StringTensorType([None, 1])),
+                ("qty_sum", FloatTensorType([None, 1])),
+                ("line_count", FloatTensorType([None, 1])),
+                ("customer_satisfaction", FloatTensorType([None, 1])),
+                ("customer_total_purchases", FloatTensorType([None, 1])),
+                ("bucket_shrink_mean", FloatTensorType([None, 1])),
+            ]
+            onnx_model = convert_sklearn(pipe, initial_types=initial_types, target_opset=15)
+            (out_dir / "pricing_residual.onnx").write_bytes(onnx_model.SerializeToString())
+        except Exception as e:
+            warnings.warn(f"ONNX export failed (continuing with PKL only): {e}")
+
+def main():
+    quotes_csv = DEFAULT_QUOTES_CSV
+    customers_csv = DEFAULT_CUSTOMERS_CSV
+    out_dir = DEFAULT_OUT_DIR
+
+    print(f"Using:\n  quotes_csv     = {quotes_csv}\n  customers_csv  = {customers_csv}\n  out_dir        = {out_dir}")
+
+    df = build_df(quotes_csv, customers_csv)
+
+    cat_cols = ["service_type","timeframe","channel","postcode_area","customer_interaction_channel"]
+    num_cols = ["qty_sum","line_count","customer_satisfaction","customer_total_purchases"]
+
+    evaluate_cv_oof_with_bucket_feature(df, cat_cols, num_cols, out_dir)
+    fit_final_model_and_export(df, cat_cols, num_cols, out_dir)
+    print("✅ Training complete.")
 
 if __name__ == "__main__":
     main()

@@ -23,3 +23,5 @@ Notes:
   const summary = resp.choices[0]?.message?.content ?? "";
   return summary.trim();
 }
+
+export default summarizeNotes;

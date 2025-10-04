@@ -3,7 +3,7 @@ import { pool } from "./db"; // your existing pg Pool
 
 import * as quotes from "./modules/quotes/quotes.controller";
 import * as QuotesController from "./modules/quotes/quotes.controller";
-
+import summarizeNotes  from "./services/notes.summarize";
 const router = Router();
 
 /** Health (public is handled in server.ts; this is a duplicate-safe route if needed) */
@@ -213,6 +213,31 @@ router.delete("/quotes/:id", quotes.remove);
 
 router.post("/quotes", QuotesController.createQuote);
 
-router.post("/quotes/ai-suggest", QuotesController.aiSuggestPrice);
+router.post("/ai-suggest-price", QuotesController.aiSuggestPrice);
+router.post("/ai-summarize-notes", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { text, maxWords, maxSentences } = (req.body ?? {}) as {
+      text?: string;
+      maxWords?: number | string;
+      maxSentences?: number | string;
+    };
+
+    if (typeof text !== "string" || !text.trim()) {
+      return res.status(400).json({ ok: false, error: "Missing 'text' to summarize." });
+    }
+
+    // prefer explicit maxWords; otherwise map sentences≈15 words each; default 60 words
+    const words =
+      Number(maxWords) ||
+      (Number(maxSentences) ? Number(maxSentences) * 15 : 60);
+
+    // call your service (either import works)
+     const summary = await summarizeNotes(text, words); 
+      return res.json({ ok: true, summary });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 export default router;

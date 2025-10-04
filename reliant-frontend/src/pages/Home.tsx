@@ -37,7 +37,6 @@ export default function Home() {
           <a className="btn" href="/customers">Customers</a>
           <a className="btn-primary" href="/make-quote">Make a Quote</a>
           <a className="btn" href="/quotations">Quotations</a>
-          <a className="btn" href="/admin">Admin</a>
         </div>
       </div>
 

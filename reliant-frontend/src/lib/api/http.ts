@@ -20,9 +20,7 @@ export type HttpOptions = {
  * - Or set VITE_API_BASE = "http://localhost:3000" to bypass proxy.
  * TIP: exporting API_BASE at bottom helps with debugging.
  */
-const API_BASE: string =
-  (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_API_BASE) ?? "";
-
+const API_BASE = 'http://localhost:3000'
 /** Ensure base + path join without accidental double slashes */
 function joinBasePath(base: string, path: string): string {
   if (!base) return path.startsWith("/") ? path : `/${path}`;

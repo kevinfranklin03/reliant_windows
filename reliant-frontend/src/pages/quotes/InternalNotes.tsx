@@ -24,7 +24,7 @@ export default function InternalNotes({ internalNotes, setInternalNotes }: Props
       setLoading(true);
 
       // Use the Vite proxy with a relative /api path
-      const res = await fetch("/api/notes/summarize", {
+      const res = await fetch("/api/ai-summarize-notes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, max_words: 60 }),

@@ -1,219 +1,122 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { pool } from "./db"; // your existing pg Pool
+import { pool } from "./db";
 
-import * as quotes from "./modules/quotes/quotes.controller";
 import * as QuotesController from "./modules/quotes/quotes.controller";
-import summarizeNotes  from "./services/notes.summarize";
+import * as CustomersController from "./modules/customers/customers.controller";
+import summarizeNotes from "./services/notes.summarize";
+
 const router = Router();
 
 /** Health (public is handled in server.ts; this is a duplicate-safe route if needed) */
 router.get("/health", (_req, res) => res.json({ ok: true }));
 
-/** GET /api/customers */
-router.get(
-  "/customers",
-  // Example: require manager+ to read customers (tweak/remove as you wish)
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { q, has, channel, min_satisfaction, limit = "50" } = req.query as Record<
-        string,
-        string | undefined
-      >;
-
-      const where: string[] = [];
-      const args: any[] = [];
-      let i = 1;
-
-      if (q && q.trim()) {
-        where.push(
-          `(name ILIKE $${i} OR email ILIKE $${i} OR phone ILIKE $${i} OR postcode ILIKE $${i})`
-        );
-        args.push(`%${q.trim()}%`);
-        i++;
-      }
-
-      if (has === "email") where.push(`email IS NOT NULL AND email <> ''`);
-      else if (has === "phone") where.push(`phone IS NOT NULL AND phone <> ''`);
-      else if (has === "both")
-        where.push(`email IS NOT NULL AND email <> '' AND phone IS NOT NULL AND phone <> ''`);
-      else if (has === "none")
-        where.push(`( (email IS NULL OR email='') AND (phone IS NULL OR phone='') )`);
-
-      if (channel && channel.trim()) {
-        where.push(`interaction_channel = $${i}`);
-        args.push(channel.trim());
-        i++;
-      }
-
-      const minSatNum = Number(min_satisfaction);
-      if (!Number.isNaN(minSatNum) && minSatNum >= 1 && minSatNum <= 5) {
-        where.push(`satisfaction >= $${i}`);
-        args.push(minSatNum);
-        i++;
-      }
-
-      const lim = Math.max(1, Math.min(500, Number(limit) || 50));
-
-      const sql = `
-        SELECT id, name, email, phone, satisfaction, postcode, interaction_channel, created_at
-        FROM customers
-        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-        ORDER BY created_at DESC
-        LIMIT ${lim};
-      `;
-
-      const { rows } = await pool.query(sql, args);
-      res.json({ rows });
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-// src/routes.ts (products)
-router.get(
-  "/products",
-  async (req, res, next) => {
-    try {
-      const { active, category, material, search, limit = "200" } =
-        req.query as Record<string, string | undefined>;
-
-      const where: string[] = [];
-      const args: any[] = [];
-      let i = 1;
-
-      if (active !== undefined) {
-        where.push(`active = $${i++}`);
-        args.push(active === "true");
-      }
-      if (category) {
-        where.push(`category = $${i++}`);
-        args.push(category);
-      }
-      if (material) {
-        where.push(`material = $${i++}`);
-        args.push(material);
-      }
-      if (search && search.trim()) {
-        where.push(`(name ILIKE $${i} OR type_name ILIKE $${i} OR material ILIKE $${i})`);
-        args.push(`%${search.trim()}%`);
-        i++;
-      }
-
-      const lim = Math.max(1, Math.min(500, Number(limit) || 200));
-
-      const sql = `
-        SELECT id, name, category, type_name, material, uom, base_price, active, created_at
-        FROM products
-        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-        ORDER BY created_at DESC
-        LIMIT ${lim};
-      `;
-      const { rows } = await pool.query(sql, args);
-
-      // Return a plain array for the frontend
-      res.json(rows);
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-
-/** GET /api/quotes (basic) */
-router.get(
-  "/quotes",
-  quotes.list ,
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { status, customer_id, limit = "50" } = req.query as Record<
-        string,
-        string | undefined
-      >;
-      const where: string[] = [];
-      const args: any[] = [];
-      let i = 1;
-
-      if (status) {
-        where.push(`status = $${i}`);
-        args.push(status);
-        i++;
-      }
-      if (customer_id) {
-        where.push(`customer_id = $${i}`);
-        args.push(customer_id);
-        i++;
-      }
-
-      const lim = Math.max(1, Math.min(200, Number(limit) || 50));
-
-      const sql = `
-        SELECT id, customer_id, status, service_type, timeframe, channel,
-               site_postcode, total_net, total_gross, created_at, issued_at, accepted_at
-        FROM quotes
-        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-        ORDER BY created_at DESC
-        LIMIT ${lim};
-      `;
-
-      const { rows } = await pool.query(sql, args);
-      res.json({ rows });
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-// AFTER
-router.get("/quotes/:id", quotes.getById);
-
-// src/routes.ts
-router.get(
-  "/services",
-  async (req, res, next) => {
-    try {
-      const { active, search, limit = "200" } = req.query as Record<string, string | undefined>;
-
-      const where: string[] = [];
-      const args: any[] = [];
-      let i = 1;
-
-      if (active === "true" || active === "false") {
-        where.push(`active = $${i++}`);
-        args.push(active === "true");
-      }
-
-      if (search && search.trim()) {
-        where.push(`(name ILIKE $${i} OR description ILIKE $${i})`);
-        args.push(`%${search.trim()}%`);
-        i++;
-      }
-
-      const lim = Math.max(1, Math.min(500, Number(limit) || 200));
-
-      const sql = `
-        SELECT id, name, description, pricing_model, base_rate, min_fee, active, created_at
-        FROM services
-        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-        ORDER BY created_at DESC
-        LIMIT ${lim};
-      `;
-      const { rows } = await pool.query(sql, args);
-      res.json(rows);
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-
-// Mutations (no backend role guard)
-router.put("/quotes/:id", quotes.update);
-router.patch("/quotes/:id/status", quotes.updateStatus);
-router.delete("/quotes/:id", quotes.remove);
-
+/* ============================
+ * Customers
+ * ============================ */
+router.get("/customers", CustomersController.list);
+router.get("/customers/:id", CustomersController.getById);
+router.post("/customers", CustomersController.create);
+router.patch("/customers/:id", CustomersController.update);
+router.delete("/customers/:id", CustomersController.remove);
+router.post("/customers/:id/archive", CustomersController.archive);
+/* ============================
+ * Quotes
+ * ============================ */
+router.get("/quotes", QuotesController.list);
+router.get("/quotes/:id", QuotesController.getById);
+router.put("/quotes/:id", QuotesController.update);
+router.patch("/quotes/:id/status", QuotesController.updateStatus);
+router.delete("/quotes/:id", QuotesController.remove);
 router.post("/quotes", QuotesController.createQuote);
-
 router.post("/ai-suggest-price", QuotesController.aiSuggestPrice);
+
+/* ============================
+ * Products
+ * ============================ */
+router.get("/products", async (req, res, next) => {
+  try {
+    const { active, category, material, search, limit = "200" } =
+      req.query as Record<string, string | undefined>;
+
+    const where: string[] = [];
+    const args: any[] = [];
+    let i = 1;
+
+    if (active !== undefined) {
+      where.push(`active = $${i++}`);
+      args.push(active === "true");
+    }
+    if (category) {
+      where.push(`category = $${i++}`);
+      args.push(category);
+    }
+    if (material) {
+      where.push(`material = $${i++}`);
+      args.push(material);
+    }
+    if (search && search.trim()) {
+      where.push(`(name ILIKE $${i} OR type_name ILIKE $${i} OR material ILIKE $${i})`);
+      args.push(`%${search.trim()}%`);
+      i++;
+    }
+
+    const lim = Math.max(1, Math.min(500, Number(limit) || 200));
+
+    const sql = `
+      SELECT id, name, category, type_name, material, uom, base_price, active, created_at
+      FROM products
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY created_at DESC
+      LIMIT ${lim};
+    `;
+    const { rows } = await pool.query(sql, args);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ============================
+ * Services
+ * ============================ */
+router.get("/services", async (req, res, next) => {
+  try {
+    const { active, search, limit = "200" } = req.query as Record<string, string | undefined>;
+
+    const where: string[] = [];
+    const args: any[] = [];
+    let i = 1;
+
+    if (active === "true" || active === "false") {
+      where.push(`active = $${i++}`);
+      args.push(active === "true");
+    }
+
+    if (search && search.trim()) {
+      where.push(`(name ILIKE $${i} OR description ILIKE $${i})`);
+      args.push(`%${search.trim()}%`);
+      i++;
+    }
+
+    const lim = Math.max(1, Math.min(500, Number(limit) || 200));
+
+    const sql = `
+      SELECT id, name, description, pricing_model, base_rate, min_fee, active, created_at
+      FROM services
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY created_at DESC
+      LIMIT ${lim};
+    `;
+    const { rows } = await pool.query(sql, args);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ============================
+ * Notes summarizer 
+ * ============================ */
 router.post("/ai-summarize-notes", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { text, maxWords, maxSentences } = (req.body ?? {}) as {
@@ -226,18 +129,14 @@ router.post("/ai-summarize-notes", async (req: Request, res: Response, next: Nex
       return res.status(400).json({ ok: false, error: "Missing 'text' to summarize." });
     }
 
-    // prefer explicit maxWords; otherwise map sentences≈15 words each; default 60 words
     const words =
-      Number(maxWords) ||
-      (Number(maxSentences) ? Number(maxSentences) * 15 : 60);
+      Number(maxWords) || (Number(maxSentences) ? Number(maxSentences) * 15 : 60);
 
-    // call your service (either import works)
-     const summary = await summarizeNotes(text, words); 
-      return res.json({ ok: true, summary });
-    } catch (err) {
-      next(err);
-    }
+    const summary = await summarizeNotes(text, words);
+    return res.json({ ok: true, summary });
+  } catch (err) {
+    next(err);
   }
-);
+});
 
 export default router;

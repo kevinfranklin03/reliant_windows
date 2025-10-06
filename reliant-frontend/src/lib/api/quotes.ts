@@ -101,13 +101,48 @@ export async function createQuote(body: {
 }
 
 /** AI SUGGEST — POST /api/ai-suggest-price */
-export async function predictQuoteCosts(payload: {
-  customer_id?: string;
-  service_type: "supply_and_install" | "supply_only";
-  timeframe: "asap" | "3_6_months" | "6_12_months";
-  channel: "website" | "phone" | "whatsapp" | "referral" | "social" | "showroom" | "email";
-  site_postcode?: string;
-  items: Array<{ product_id?: string; service_id?: string; description?: string; uom?: string; quantity: number }>;
-}) {
-  return http("POST", "/api/ai-suggest-price", payload);
+
+/** AI SUGGEST — POST /api/ai-suggest-price */
+export type PredictCostsPayload = {
+  base_cost: number;
+  material_cost: number;
+  labour_cost: number;
+  overhead_cost: number;
+  timeline_cost: number;
+  transport_cost: number;
+  service_fee: number;
+  discount: number;   // absolute amount
+  vat_rate: number;   // 0..1 (e.g., 0.2 for 20%)
+};
+
+export type PredictCostsResponse = {
+  ok: true;
+  suggestion: {
+    net: number;
+    gross: number;
+    vat_rate: number;  // 0..1
+    uplift: number;    // AI add-on (net)
+  };
+  reason: string;
+
+  // Echoed / convenience fields for the UI:
+  base_cost: number;
+  material_cost: number;
+  labour_cost: number;
+  overhead_cost: number;
+  timeline_cost: number;
+  transport_cost: number;
+  service_fee: number;
+  ai_pred_cost: number;   // == uplift
+  vat_percent: number;    // 0..100 (for your UI controls)
+  suggested_discount_pct?: number;
+};
+
+export async function predictQuoteCosts(payload: PredictCostsPayload) {
+  return await http<PredictCostsResponse>({
+    method: "POST",
+    path: "/api/ai-suggest-price",
+    body: payload,
+  });
 }
+

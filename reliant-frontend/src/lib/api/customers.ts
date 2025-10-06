@@ -15,24 +15,38 @@ type ListCustomersParams = {
   channel?: string;
   min_satisfaction?: number | ""; // allow "" → server treats as undefined
   limit?: number;                 // server clamps (default ~50/200)
+  include_archived?: boolean;  
+  only_archived?: boolean; 
 };
 
 /** GET /api/customers with optional filters. Returns { rows } from server. */
 export async function listCustomers(params: ListCustomersParams = {}) {
-  const { has, q, channel, min_satisfaction, limit } = params;
-  // Pass through as query params; server normalizes types.
+  const { has, q, channel, min_satisfaction, limit, include_archived, only_archived } = params;
   return await http<any>({
     path: "/api/customers",
-    query: { has, q, channel, min_satisfaction, limit },
+    query: { has, q, channel, min_satisfaction, limit, include_archived, only_archived },
   });
 }
 
-/** POST /api/customers – create a customer (partial allowed). */
 export async function createCustomer(data: Partial<Customer>) {
   return await http<Customer>({
     method: "POST",
     path: "/api/customers",
     body: data,
+  });
+}
+
+export async function archiveCustomer(id: string) {
+  return await http<{ ok: true; customer: Customer }>({
+    method: "POST",
+    path: `/api/customers/${id}/archive`,
+  });
+}
+
+export async function unarchiveCustomer(id: string) {
+  return await http<{ ok: true; customer: Customer }>({
+    method: "POST",
+    path: `/api/customers/${id}/unarchive`,
   });
 }
 

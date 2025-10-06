@@ -126,6 +126,7 @@ export type Customer = {
   total_purchases?: number | null;
   interaction_channel?: Channel | string | null; // accept raw strings from forms
   created_at?: string;
+  archived_at: string | null;
 };
 
 // Products (minimal shape your UI uses)

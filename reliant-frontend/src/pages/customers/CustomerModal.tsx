@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import StarInput from "./StarInput";
-import { createCustomer, updateCustomer, deleteCustomer } from "../../lib/api/customers";
+import {createCustomer, updateCustomer, deleteCustomer, archiveCustomer } from "../../lib/api/customers";
 import type { Customer } from "../../lib/api/types"; 
 type Props = {
   open: boolean;
@@ -13,6 +13,16 @@ export default function CustomerModal({ open, onClose, onSaved, editing }: Props
   const [form, setForm] = useState<Partial<Customer>>({
     name:'', email:'', phone:'', satisfaction:3, postcode:'', interaction_channel:'website' as any
   });
+
+  async function archive() {
+  if (!editing) return;
+  if (!confirm(`Archive ${editing.name}? They will be hidden from lists.`)) return;
+  await archiveCustomer(editing.id);
+  alert("Archived.");
+  onClose();
+  await onSaved();
+}
+
 
   useEffect(() => {
     if (editing) {
@@ -53,6 +63,22 @@ export default function CustomerModal({ open, onClose, onSaved, editing }: Props
     }
   }
 
+    async function save() {
+ if (!editing) {
+     alert("Creating customers is disabled.");
+     return;
+   }
+   await updateCustomer(editing.id, form);
+   if (!editing) {
+     await createCustomer(form);
+   } else {
+     await updateCustomer(editing.id, form);
+   }
+    onClose();
+    await onSaved();
+  }
+
+
   async function remove() {
     if (!editing) return;
     if(!confirm(`Delete ${editing.name}? This cannot be undone.`)) return;
@@ -61,7 +87,17 @@ export default function CustomerModal({ open, onClose, onSaved, editing }: Props
       onClose();
       await onSaved();
     } catch (e:any) {
-      alert(e?.message || 'Delete failed');
+         // If the server says FK conflict (409), archive instead:
+      const msg = String(e?.message ?? "");
+      const isConflict = /(^|[^0-9])409([^0-9]|$)/.test(msg) || /related quotes|conflict/i.test(msg);
+      if (isConflict) {
+        await archiveCustomer(editing.id);
+        alert('Customer has related quotes, so they were archived instead.');
+        onClose();
+        await onSaved();
+      } else {
+        alert(msg || 'Delete failed');
+      }
     }
   }
 
@@ -100,8 +136,18 @@ export default function CustomerModal({ open, onClose, onSaved, editing }: Props
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
-          {editing && <button className="btn-danger" onClick={remove}>Delete</button>}
-          <button className="btn-primary" onClick={submit}>{editing ? 'Save changes' : 'Create'}</button>
+
+          <div className="mt-5 flex justify-end gap-2">
+  {editing && (
+    <>
+      <button className="btn" onClick={archive}>Archive</button>
+      <button className="btn-danger" onClick={remove}>Delete</button>
+    </>
+  )}
+  <button className="btn-primary" onClick={submit}>
+    {editing ? 'Save changes' : 'Create'}
+  </button>
+</div>
         </div>
       </div>
     </div>

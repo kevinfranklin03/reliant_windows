@@ -6,7 +6,6 @@ import morgan from "morgan";
 import "dotenv/config"; 
 
 import apiRouter from "./routes";
-import { notFound, errorHandler } from "./middlewares/error";
 
 export function createApp() {
   const ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
@@ -38,9 +37,6 @@ export function createApp() {
   // API v1
   app.use("/api", apiRouter);
 
-  // 404 + errors
-  app.use(notFound);
-  app.use(errorHandler);
 
   return app;
 }

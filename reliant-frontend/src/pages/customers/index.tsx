@@ -6,8 +6,9 @@ import StarLineFilter from "./StarLineFilter";
 import {
   listCustomers,
   deleteCustomer,
+  archiveCustomer,          // ← for delete→archive fallback
 } from "../../lib/api/customers";
-import type { Customer } from "../../lib/api/types"; 
+import type { Customer } from "../../lib/api/types";
 
 /**
  * CustomersPage
@@ -19,17 +20,17 @@ import type { Customer } from "../../lib/api/types";
  * Keep the data fetch in a single `load()` to keep things tidy.
  */
 export default function CustomersPage() {
-  const [rows, setRows]   = useState<Customer[]>([]);
+  const [rows, setRows] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // search + filters
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<{
-    has: ''|'email'|'phone'|'both'|'none'
-    channel: ''|'website'|'phone'|'whatsapp'|'referral'|'social'|'showroom'|'email'
-    min_satisfaction: number | ''
-  }>({ has:'', channel:'', min_satisfaction:'' });
+    has: "" | "email" | "phone" | "both" | "none";
+    channel: "" | "website" | "phone" | "whatsapp" | "referral" | "social" | "showroom" | "email";
+    min_satisfaction: number | "";
+  }>({ has: "", channel: "", min_satisfaction: "" });
 
   // pagination (client-side)
   const [page, setPage] = useState(1);
@@ -43,55 +44,70 @@ export default function CustomersPage() {
    * Fetch with current filters.
    * NOTE: Server already clamps limit; we pass a generous 500 and paginate client-side.
    */
-  async function load(){
-    setLoading(true); setError(null);
-    try{
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
       const data = await listCustomers({
         has: filters.has || undefined,
         q: search || undefined,
         channel: filters.channel || undefined,
         min_satisfaction: filters.min_satisfaction || undefined,
-        // @NOTE: if your backend doesn't accept 'limit', it will be ignored in our lib/api
-        limit: 500
+        limit: 500,
       });
       // Server may return either {rows:[...]} or just [...]
       setRows((data as any).rows || (data as any));
       setPage(1); // reset to first page on every new fetch
-    } catch (e:any) {
-      setError(e?.message || 'Failed to load');
-    } finally { setLoading(false); }
+    } catch (e: any) {
+      setError(e?.message || "Failed to load");
+    } finally {
+      setLoading(false);
+    }
   }
 
   // Initial load (on mount)
-  // TIP: you could also debounce search + auto-load on changes if desired.
-  useEffect(()=>{ load() },[]);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  function clearFilters(){
-    setFilters({ has:'', channel:'', min_satisfaction:'' });
+  function clearFilters() {
+    setFilters({ has: "", channel: "", min_satisfaction: "" });
   }
 
-  function openCreate(){
+  function openCreate() {
     setEditing(null);
     setModalOpen(true);
   }
-  function openEdit(c: Customer){
+
+  function openEdit(c: Customer) {
     setEditing(c);
     setModalOpen(true);
   }
 
-  // Hard delete with a confirm guard
-  async function handleDelete(c: Customer){
-    if(!confirm(`Delete ${c.name}? This cannot be undone.`)) return;
-    try{
+  // Hard delete with a confirm guard + FK fallback to archive
+  async function handleDelete(c: Customer) {
+    if (!confirm(`Delete ${c.name}? This cannot be undone.`)) return;
+    try {
       await deleteCustomer(c.id);
       await load();
-    } catch (e:any) {
-      alert(e?.message || 'Delete failed');
+    } catch (e: any) {
+      const msg = String(e?.message ?? "");
+      const isConflict =
+        /(^|[^0-9])409([^0-9]|$)/.test(msg) || /related quotes|conflict/i.test(msg);
+      if (isConflict) {
+        // auto-archive on FK conflict
+        await archiveCustomer(c.id);
+        alert("Customer had related quotes, so they were archived instead.");
+        await load();
+      } else {
+        alert(msg || "Delete failed");
+      }
     }
   }
 
   // Simple client-side pagination
-  const { pageCount, pageRows } = useMemo(()=>{
+  const { pageCount, pageRows } = useMemo(() => {
     const total = rows.length;
     const pageCount = Math.max(1, Math.ceil(total / pageSize));
     const safePage = Math.min(Math.max(1, page), pageCount);
@@ -108,14 +124,16 @@ export default function CustomersPage() {
             className="field flex-1 min-w-[240px]"
             placeholder="Search customers (name, email, phone, postcode)…"
             value={search}
-            onChange={e=>setSearch(e.target.value)}
-            onKeyDown={e=>{ if(e.key==='Enter') load() }}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") load();
+            }}
           />
 
           <select
             className="field field-select text-black dark:text-white"
             value={filters.has}
-            onChange={e=>setFilters({...filters,has:e.target.value as any})}
+            onChange={(e) => setFilters({ ...filters, has: e.target.value as any })}
             title="Has contact info"
           >
             <option value="">has: any</option>
@@ -128,25 +146,36 @@ export default function CustomersPage() {
           <select
             className="field field-select text-black dark:text-white"
             value={filters.channel}
-            onChange={e=>setFilters({...filters,channel:e.target.value as any})}
+            onChange={(e) => setFilters({ ...filters, channel: e.target.value as any })}
             title="Acquisition channel"
           >
             <option value="">channel: any</option>
-            <option>website</option><option>phone</option><option>whatsapp</option>
-            <option>referral</option><option>social</option><option>showroom</option><option>email</option>
+            <option>website</option>
+            <option>phone</option>
+            <option>whatsapp</option>
+            <option>referral</option>
+            <option>social</option>
+            <option>showroom</option>
+            <option>email</option>
           </select>
 
           <div className="shrink-0">
             <StarLineFilter
               value={filters.min_satisfaction}
-              onChange={(v)=>setFilters({ ...filters, min_satisfaction: v })}
+              onChange={(v) => setFilters({ ...filters, min_satisfaction: v })}
             />
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <button className="btn" onClick={clearFilters}>Clear</button>
-            <button className="btn-primary" onClick={load}>Apply</button>
-            <button className="btn" onClick={openCreate}>+ New</button>
+            <button className="btn" onClick={clearFilters}>
+              Clear
+            </button>
+            <button className="btn-primary" onClick={load}>
+              Apply
+            </button>
+            <button className="btn" onClick={openCreate}>
+              + New
+            </button>
           </div>
         </div>
       </div>
@@ -161,7 +190,7 @@ export default function CustomersPage() {
         pageSize={pageSize}
         pageCount={pageCount}
         setPage={setPage}
-        setPageSize={(n)=>setPageSize(n)}
+        setPageSize={(n) => setPageSize(n)}
         onEdit={openEdit}
         onDelete={handleDelete}
       />
@@ -169,7 +198,7 @@ export default function CustomersPage() {
       {/* Create/Edit modal */}
       <CustomerModal
         open={modalOpen}
-        onClose={()=>setModalOpen(false)}
+        onClose={() => setModalOpen(false)}
         onSaved={load}
         editing={editing}
       />

@@ -6,6 +6,9 @@ import {
   AiSuggestInput,
 } from "./pricing.model";
 
+/* ------------------------------------------------------------------ */
+/*                        INSERT BARE QUOTE HEADER                     */
+/* ------------------------------------------------------------------ */
 /**
  * Insert a bare quote header.
  * NOTE: This does NOT insert items; it stores header + cost totals only.
@@ -31,10 +34,9 @@ export async function insertQuote(q: any): Promise<string> {
     )
     RETURNING id
   `;
-  // Keep args positional to match the SQL above.
   const args = [
     q.customer_id,
-    q.service_type, // must be enum value
+    q.service_type, // enum
     q.timeframe,
     q.channel,
     q.site_postcode,
@@ -99,23 +101,19 @@ type CreateQuoteInput = {
   items: QuoteItemInput[];
 };
 
-/**
- * Full quote creator (header + items) in a single TX.
- * - Validates FK to customers up front.
- * - Explicit enum casts on header insert to avoid search_path weirdness.
- * - Inserts items if provided.
- */
+/* ------------------------------------------------------------------ */
+/*                           CREATE QUOTE TX                          */
+/* ------------------------------------------------------------------ */
 export async function createQuote(input: CreateQuoteInput) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    // Lock to public schema for this TX to avoid accidental shadow schema writes.
     await client.query(`SET LOCAL search_path TO public`);
 
-    const db = await client.query("select current_database() db, current_user usr");
-    console.log(`[quotes] DB=${db.rows[0]?.db} USER=${db.rows[0]?.usr}`);
+    const dbi = await client.query("select current_database() db, current_user usr");
+    console.log(`[quotes] DB=${dbi.rows[0]?.db} USER=${dbi.rows[0]?.usr}`);
 
-    // Validate FK early (clear message when customer is missing).
+    // Validate FK early.
     const ck = await client.query(
       `SELECT 1 FROM public.customers WHERE id = $1`,
       [input.customer_id]
@@ -126,7 +124,6 @@ export async function createQuote(input: CreateQuoteInput) {
 
     const status = "draft"; // enum public.quote_status
 
-    // Header insert with explicit enum casts.
     const insertHeaderSQL = `
       INSERT INTO public.quotes (
         customer_id, status, service_type, timeframe, channel,
@@ -152,9 +149,9 @@ export async function createQuote(input: CreateQuoteInput) {
     const headerVals = [
       input.customer_id,
       status,
-      input.service_type,         // must match enum label exactly
-      input.timeframe,            // must match enum label exactly
-      input.channel ?? null,      // nullable enum
+      input.service_type,
+      input.timeframe,
+      input.channel ?? null,
       input.site_postcode ?? null,
       input.issued_by ?? null,
       input.approved_by ?? null,
@@ -175,12 +172,10 @@ export async function createQuote(input: CreateQuoteInput) {
     ];
 
     const headerRes = await client.query(insertHeaderSQL, headerVals);
-    if (headerRes.rowCount !== 1) {
-      throw new Error("Failed to insert quote header");
-    }
+    if (headerRes.rowCount !== 1) throw new Error("Failed to insert quote header");
     const quoteId: string = headerRes.rows[0].id;
 
-    // Items insert (if any). Fails hard → rollback (as intended).
+    // Items
     let insertedItems = 0;
     if (Array.isArray(input.items) && input.items.length) {
       const insertItemSQL = `
@@ -206,28 +201,22 @@ export async function createQuote(input: CreateQuoteInput) {
           typeof li.is_bespoke === "boolean" ? li.is_bespoke : null,
         ];
         const r = await client.query(insertItemSQL, vals);
-        if (r.rowCount !== 1) {
-          throw new Error("Failed to insert a quote item");
-        }
+        if (r.rowCount !== 1) throw new Error("Failed to insert a quote item");
         insertedItems++;
       }
     }
 
-    // Sanity check before commit.
     const verify = await client.query(
       `SELECT 1 FROM public.quotes WHERE id = $1`,
       [quoteId]
     );
-    if (!verify.rowCount) {
-      throw new Error("Verification failed: header row not found after insert");
-    }
+    if (!verify.rowCount) throw new Error("Verification failed: header row not found after insert");
 
     await client.query("COMMIT");
     console.log(`[quotes] created id=${quoteId} items=${insertedItems}`);
     return { id: quoteId, status, inserted_items: insertedItems };
   } catch (err: any) {
     await client.query("ROLLBACK");
-    // Log PG diagnostic bits when available (super helpful).
     if (err?.code) {
       console.error("[quotes] PG error:", {
         code: err.code,
@@ -272,7 +261,6 @@ function toChannel(x?: string | null): Channel | undefined {
 // Small customer slice for AI pricing (avoid heavy joins).
 async function getCustomerLite(customer_id?: string | null) {
   if (!customer_id) return null;
-  // NOTE: Keep selected columns minimal for speed.
   return db.oneOrNone<{
     id: string;
     satisfaction: number | null;
@@ -287,6 +275,8 @@ async function getCustomerLite(customer_id?: string | null) {
   );
 }
 
+/* ----------------------- AI Suggest: unified paths ---------------------- */
+
 type PredictPayload = {
   customer_id?: string;
   service_type: "supply_and_install" | "supply_only";
@@ -296,15 +286,98 @@ type PredictPayload = {
   items: { product_id?: string; service_id?: string; description?: string; uom?: string; quantity: number }[];
 };
 
+// COST-BASED payload type (frontend may send this instead of items)
+export type CostSuggestPayload = {
+  base_cost?: number;
+  material_cost?: number;
+  labour_cost?: number;
+  overhead_cost?: number;
+  timeline_cost?: number;
+  transport_cost?: number;
+  service_fee?: number;
+  discount?: number;   // absolute
+  vat_rate?: number;   // 0..1
+};
+
+export type CostSuggestResponse = {
+  ok: true;
+  suggestion: { net: number; gross: number; vat_rate: number; uplift: number };
+  reason: string;
+
+  // echo fields expected by FE
+  base_cost: number;
+  material_cost: number;
+  labour_cost: number;
+  overhead_cost: number;
+  timeline_cost: number;
+  transport_cost: number;
+  service_fee: number;
+  ai_pred_cost: number;  // == uplift
+  vat_percent: number;   // 0..100
+  suggested_discount_pct?: number;
+};
+
+const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+/** Pure: take cost inputs, compute uplift & totals, return UI-friendly shape */
+export function aiSuggestFromCosts(payload: CostSuggestPayload): CostSuggestResponse {
+  const base_cost       = Number(payload.base_cost ?? 0);
+  const material_cost   = Number(payload.material_cost ?? 0);
+  const labour_cost     = Number(payload.labour_cost ?? 0);
+  const overhead_cost   = Number(payload.overhead_cost ?? 0);
+  const timeline_cost   = Number(payload.timeline_cost ?? 0);
+  const transport_cost  = Number(payload.transport_cost ?? 0);
+  const service_fee     = Number(payload.service_fee ?? 0);
+  const discountAbs     = Math.max(0, Number(payload.discount ?? 0));
+  const vat_rate        = Math.max(0, Number(payload.vat_rate ?? 0)); // 0..1
+
+  const subtotal = base_cost + material_cost + labour_cost + overhead_cost + timeline_cost + transport_cost + service_fee;
+  const net_before_uplift = Math.max(0, subtotal - discountAbs);
+
+  // Heuristic: ~12% uplift, clamped to 0..25%
+  const upliftPct = Math.max(0, Math.min(0.25, 0.12));
+  const uplift    = r2(subtotal * upliftPct);
+
+  const suggested_net   = r2(net_before_uplift + uplift);
+  const suggested_gross = r2(suggested_net * (1 + vat_rate));
+
+  return {
+    ok: true,
+    suggestion: { net: suggested_net, gross: suggested_gross, vat_rate, uplift },
+    reason:
+      "Baseline = sum of costs minus discount; uplift ≈ 12% of subtotal (capped at 25%) to cover risk/margin.",
+    base_cost: r2(base_cost),
+    material_cost: r2(material_cost),
+    labour_cost: r2(labour_cost),
+    overhead_cost: r2(overhead_cost),
+    timeline_cost: r2(timeline_cost),
+    transport_cost: r2(transport_cost),
+    service_fee: r2(service_fee),
+    ai_pred_cost: uplift,
+    vat_percent: r2(vat_rate * 100),
+  };
+}
+
 /**
  * Orchestrates AI pricing:
- * - loads a tiny customer profile (satisfaction/loyalty)
- * - normalizes channel
- * - calls aiSuggestCosts (which blends rule + model residual)
+ * - If body has cost fields, compute from costs (aiSuggestFromCosts)
+ * - Else if body has items, call model path (aiSuggestCosts) and normalize to FE shape
  */
-export async function aiSuggestPriceService(payload: PredictPayload): Promise<AiSuggestResult> {
-  const cust = await getCustomerLite(payload.customer_id);
+export async function aiSuggestPriceService(payload: any): Promise<CostSuggestResponse> {
+  // COST-BASED path
+  if (
+    payload &&
+    (
+      'base_cost' in payload || 'material_cost' in payload || 'labour_cost' in payload ||
+      'overhead_cost' in payload || 'timeline_cost' in payload || 'transport_cost' in payload ||
+      'service_fee' in payload
+    )
+  ) {
+    return aiSuggestFromCosts(payload as CostSuggestPayload);
+  }
 
+  // ITEMS-BASED path (existing)
+  const cust = await getCustomerLite(payload?.customer_id);
   const input: AiSuggestInput = {
     customer: cust
       ? {
@@ -312,17 +385,53 @@ export async function aiSuggestPriceService(payload: PredictPayload): Promise<Ai
           satisfaction: cust.satisfaction ?? undefined,
           total_purchases: cust.total_purchases ?? undefined,
           postcode: cust.postcode ?? undefined,
-          channel: toChannel(cust.interaction_channel)
+          channel: toChannel(cust.interaction_channel),
         }
       : null,
-    service_type: payload.service_type,
-    timeframe: payload.timeframe,
-    channel: payload.channel,
-    site_postcode: payload.site_postcode,
-    items: payload.items || [],
+    service_type: payload?.service_type,
+    timeframe: payload?.timeframe,
+    channel: payload?.channel,
+    site_postcode: payload?.site_postcode,
+    items: payload?.items || [],
   };
 
-  return aiSuggestCosts(input);
+  const out: AiSuggestResult = await aiSuggestCosts(input);
+
+  // Derive totals from granular fields your model returns
+  const subtotal =
+    (out.base_cost ?? 0) +
+    (out.material_cost ?? 0) +
+    (out.labour_cost ?? 0) +
+    (out.overhead_cost ?? 0) +
+    (out.timeline_cost ?? 0) +
+    (out.transport_cost ?? 0) +
+    (out.service_fee ?? 0);
+
+  const uplift  = Number(out.ai_pred_cost ?? 0);                    // model residual add-on
+  const vatRate = Math.max(0, Number(out.vat_percent ?? 20) / 100); // convert % → 0..1
+  const net     = r2(subtotal + uplift);
+  const gross   = r2(net * (1 + vatRate));
+
+  return {
+    ok: true,
+    suggestion: {
+      net,
+      gross,
+      vat_rate: vatRate,
+      uplift: r2(uplift),
+    },
+    reason: out.reason ?? "Predicted from items, customer and channel context.",
+    base_cost:      r2(out.base_cost ?? 0),
+    material_cost:  r2(out.material_cost ?? 0),
+    labour_cost:    r2(out.labour_cost ?? 0),
+    overhead_cost:  r2(out.overhead_cost ?? 0),
+    timeline_cost:  r2(out.timeline_cost ?? 0),
+    transport_cost: r2(out.transport_cost ?? 0),
+    service_fee:    r2(out.service_fee ?? 0),
+    ai_pred_cost:   r2(uplift),
+    vat_percent:    r2(vatRate * 100),
+    suggested_discount_pct: out.suggested_discount_pct,
+  };
 }
 
 /* ------------------------------ queries --------------------------------- */
@@ -335,10 +444,6 @@ type ListParams = {
   limit?: number;
 };
 
-/**
- * List quotes with a few common filters.
- * NOTE: Returns a plain array; add pagination meta later if needed.
- */
 export async function list(p: ListParams) {
   const where: string[] = [];
   const vals: any[] = [];
@@ -362,15 +467,10 @@ export async function list(p: ListParams) {
     ORDER BY q.created_at DESC
     LIMIT ${limit};
   `;
-  // TIP: Index q.created_at DESC, q.status, and a trigram/GIN on c.name if search gets heavy.
   const r = await pool.query(sql, vals);
   return r.rows ?? [];
 }
 
-/**
- * Get a single quote (header + items).
- * Shape totals as numbers, attach items sorted by creation order.
- */
 export async function getById(id: string) {
   const qSql = `
     SELECT q.*, jsonb_build_object('name', c.name) AS customer
@@ -421,7 +521,6 @@ export async function getById(id: string) {
   const ir = await pool.query(itemsSql, [id]);
   quote.items = ir.rows ?? [];
 
-  // number-ify totals for FE (avoid "123.45" strings).
   const num = (v: any) => (v == null ? 0 : Number(v));
   quote.total_net   = num(quote.total_net);
   quote.vat_amount  = num(quote.vat_amount);
@@ -430,11 +529,6 @@ export async function getById(id: string) {
   return quote;
 }
 
-/**
- * Patch a quote header. Unknown keys are ignored at controller level,
- * but we still update whatever arrives in `patch` here.
- * Returns the refreshed quote.
- */
 export async function update(id: string, patch: Record<string, any>) {
   if (!Object.keys(patch).length) return await getById(id);
 
@@ -454,9 +548,6 @@ export async function update(id: string, patch: Record<string, any>) {
   return await getById(targetId);
 }
 
-/**
- * Update only the status (tiny helper used by controller).
- */
 export async function updateStatus(id: string, status: string) {
   const r = await pool.query(
     `UPDATE quotes SET status = $1 WHERE id = $2 RETURNING id;`,
@@ -468,10 +559,6 @@ export async function updateStatus(id: string, status: string) {
   return await getById(id);
 }
 
-/**
- * Hard delete a quote + its items.
- * NOTE: UI currently uses "declined" instead of delete; this is optional.
- */
 export async function remove(id: string) {
   await pool.query('DELETE FROM quote_items WHERE quote_id = $1', [id]);
   await pool.query('DELETE FROM quotes WHERE id = $1', [id]);
